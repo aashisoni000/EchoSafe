@@ -1,0 +1,1199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>EchoSafe</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+
+<style>
+/* ==== Core Design Variables ==== */
+:root{
+  --bg: #f0f2f5; 
+  --panel: #ffffff; 
+  --accent: #1677ff; 
+  --muted: #6c757d; 
+  --text: #212529; 
+  --input-bg: #f8f9fa; 
+  --bubble-me: #1677ff; 
+  --bubble-them: #ffffff; 
+  --hover: rgba(0, 0, 0, 0.05);
+  --shadow-color: rgba(0, 0, 0, 0.1); 
+  --online: #28a745; 
+  --ephemeral-color: #ff6a00; 
+}
+
+:root.dark{
+  --bg:#0f1115;
+  --panel:#161a20;
+  --accent:#4c8dff;
+  --muted:#9aa4b2;
+  --text:#e6e9ee;
+  --input-bg:#0f1319;
+  --bubble-me:#2563eb;
+  --bubble-them:#1b2028;
+  --hover: rgba(255,255,255,0.06);
+  --shadow-color: rgba(0,0,0,0.35);
+  --online:#3ddc84;
+  --ephemeral-color:#ffa657;
+}
+
+*{box-sizing:border-box;font-family: 'Inter', sans-serif;}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);}
+.app{
+    max-width:1280px;
+    height: 90vh; 
+    min-height: 700px;
+    margin:20px auto;
+    border-radius:18px;
+    overflow:hidden;
+    display:grid;
+    grid-template-columns:300px 1fr; 
+    box-shadow: 0 8px 30px var(--shadow-color);
+}
+.transition-300 { transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+
+/* ==== Sidebar ==== */
+.sidebar{background:var(--panel);padding:20px;display:flex;flex-direction:column; border-right: 1px solid #e9eef2;}
+:root.dark .sidebar{ border-right-color:#1f2630; }
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:25px;}
+.logo{width:40px;height:40px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;color:white;font-size:16px;flex-shrink:0;}
+.title{font-weight:700;font-size:22px;}
+.subtitle{font-size:12px;color:var(--muted);margin-top:2px;}
+.controls{display:flex;gap:8px;margin-bottom:15px;align-items:center;}
+.btn{
+    background:var(--input-bg);
+    border:1px solid #2a2f37;
+    padding:8px 10px;
+    border-radius:10px;
+    color:var(--text);
+    cursor:pointer;
+    font-size:13px;
+    display:flex; align-items:center; gap:6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+:root:not(.dark) .btn{ border-color:#e0e0e0; }
+.btn:hover{background:var(--hover); transform: translateY(-1px);}
+
+.contacts{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding-right:4px;}
+.contact{
+    display:flex;gap:12px;align-items:center;padding:12px;border-radius:12px;
+    cursor:pointer;
+    background:transparent;
+    border: 1px solid transparent;
+}
+.contact:hover{background:var(--hover);}
+.contact.active{background:var(--input-bg); border-color: var(--accent); box-shadow:0 0 0 1px var(--accent);}
+.contact.active .muted-text{color:var(--text);}
+
+.avatar{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;background:var(--input-bg);flex-shrink:0;font-size:15px; border:2px solid var(--accent);}
+.meta{flex:1;min-width:0;}
+.name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:15px;}
+.last{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.muted-text{color:var(--muted);}
+
+/* ==== Chat Area ==== */
+.chat{background:var(--bg); padding:0; display:flex;flex-direction:column; position:relative;}
+.header{
+    background:var(--panel);
+    padding:14px 20px;
+    display:flex;align-items:center;justify-content:space-between;
+    box-shadow:0 2px 10px rgba(0,0,0,0.1);
+    z-index: 10;
+}
+.header-left{display:flex;align-items:center;gap:12px;min-width:0;}
+.chat-title{font-weight:700;font-size:18px;}
+.online-indicator{ width: 8px; height: 8px; border-radius: 50%; background: var(--online); margin-left: 6px; }
+.actions{display:flex;gap:10px;align-items:center;}
+.actions .btn{background:transparent; border:none; padding:8px; font-size:16px; color: var(--muted);}
+.actions .btn:hover{color:var(--accent);}
+.actions .ephemeral-toggle.active i, .actions .otv-toggle.active i {
+    color: var(--ephemeral-color); 
+}
+
+.messages{
+    flex:1;
+    padding:20px;
+    overflow-y:auto;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    padding-right: 15px;
+}
+
+.msg{
+    max-width:70%;
+    padding:10px 60px 10px 14px; 
+    border-radius:16px;
+    line-height:1.4;
+    word-break:break-word;
+    position:relative;
+    font-size:15px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.msg.me{
+    align-self:flex-end;
+    background:var(--bubble-me);
+    color:white;
+    border-bottom-right-radius:4px;
+}
+.msg.them{
+    align-self:flex-start;
+    background:var(--bubble-them);
+    color:var(--text);
+    border: 1px solid #2a2f37;
+    border-bottom-left-radius:4px;
+}
+:root:not(.dark) .msg.them{ border-color:#e0e0e0; }
+.time{font-size:10px;position:absolute;bottom:4px;right:8px;white-space:nowrap;color:rgba(255,255,255,0.7);}
+.msg.them .time{color:var(--muted);}
+.msg .fa-check-double{font-size:10px;}
+.msg.ephemeral{border: 1px dashed var(--ephemeral-color); background: #fff3e6; color: var(--text);}
+:root.dark .msg.ephemeral{background:#241a12;}
+.msg.ephemeral.me{background: #e6f7ff; color: var(--text); border-color: var(--ephemeral-color); border: 1px dashed;}
+:root.dark .msg.ephemeral.me{background:#11243a;color:#dbe5f6;}
+
+/* Media/File Messages */
+.msg-media{padding:0;max-width:300px;border-radius:16px;overflow:hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);}
+.msg-media .media-preview img,
+.msg-media video {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 16px 16px 0 0;
+}
+.msg-media .caption {
+    padding: 8px 60px 10px 14px; 
+    font-size: 14px;
+    word-wrap: break-word;
+    position: relative;
+    background: var(--bubble-them); 
+    color: var(--text);
+    border-top: 1px solid #2a2f37;
+}
+:root:not(.dark) .msg-media .caption{ border-color:#e0e0e0; }
+.msg.me .msg-media .caption{background: var(--input-bg);}
+.msg.them .msg-media .caption{background: var(--input-bg);}
+
+/* OTV Specific */
+.otv-media .caption {
+    padding: 10px 14px; 
+    font-weight: 600;
+}
+.otv-media .otv-view-btn {
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+/* ==== Composer ==== */
+.composer{
+    background:var(--panel);
+    padding:10px 20px;
+    display:flex;gap:12px;
+    align-items:flex-end;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+}
+.input-area{
+    flex:1;
+    display:flex;
+    align-items:center;
+    background:var(--input-bg);
+    border-radius:24px;
+    min-height:48px;
+    padding:0 15px;
+    border: 1px solid #2a2f37;
+}
+:root:not(.dark) .input-area{ border-color:#e0e0e0; }
+.input-area input{
+    flex:1;
+    background:transparent;
+    border:none;
+    color:inherit;
+    outline:none;
+    padding:10px 0;
+    font-size:15px;
+}
+.composer-btn{
+    background:transparent;
+    border:none;
+    color:var(--muted);
+    font-size:18px;
+    padding:0 5px;
+    cursor:pointer;
+    transition:color 0.2s;
+}
+.composer-btn:hover{color:var(--accent);}
+.send-mic-btn{
+    width:48px;
+    height:48px;
+    border-radius:50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:20px;
+    cursor:pointer;
+    background:var(--accent);
+    color:white;
+    flex-shrink:0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    border:none;
+}
+.send-mic-btn:hover{background:#0069e2; transform: scale(1.05);}
+
+/* Emoji Picker */
+.emoji-picker {
+    position: absolute;
+    bottom: 70px;
+    left: 20px;
+    background: var(--panel);
+    border: 1px solid #2a2f37;
+    border-radius: 12px;
+    padding: 10px;
+    box-shadow: 0 4px 20px var(--shadow-color);
+    z-index: 50;
+    display: none;
+    max-width: 320px;
+}
+:root:not(.dark) .emoji-picker{ border-color:#e0e0e0; }
+.emoji-picker.show { display: block; }
+.emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 5px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.emoji-item {
+    font-size: 24px;
+    cursor: pointer;
+    padding: 5px;
+    text-align: center;
+    border-radius: 6px;
+    transition: background 0.2s;
+}
+.emoji-item:hover {
+    background: var(--hover);
+}
+
+/* Modal */
+.modal-backdrop{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.4);
+    backdrop-filter: blur(4px);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:100;
+}
+.modal{
+    width:480px;
+    background:var(--panel);
+    padding:22px 22px 18px;
+    border-radius:14px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.3);
+}
+.modal h3{ margin:0 0 10px; }
+.field{ margin:10px 0 12px; }
+.field label.small{ display:block; font-size:12px; color:var(--muted); margin-bottom:6px; }
+.field input{
+  width:100%;
+  background:var(--input-bg);
+  border:1px solid #2a2f37;
+  padding:10px 12px;
+  border-radius:10px;
+  color:var(--text);
+  outline:none;
+}
+:root:not(.dark) .field input{ border-color:#e0e0e0; }
+.modal .btn.primary{background:var(--accent);color:white;}
+.modal .btn.primary:hover{background:#0069e2;}
+.record-indicator{color:#ff4d4d;font-weight:600;display:none;font-size:14px;}
+.video-grid video{border-radius:10px; border: 1px solid var(--accent);}
+
+#videoModal #remoteVideoContainer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+#videoModal #remoteVideo, #videoModal #localVideo {
+    width: 320px;
+    height: 240px;
+    border-radius: 8px;
+    background: #000;
+    border: 1px solid var(--accent);
+}
+.small{font-size:12px;}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar transition-300">
+    <div class="brand">
+      <div class="logo">ES</div>
+      <div>
+        <div class="title">EchoSafe</div>
+        <div class="subtitle">Secure Client Demo</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn transition-300" id="btnClear"><i class="fas fa-trash-alt"></i> Reset</button>
+      <button class="btn transition-300" id="themeToggle" title="Toggle theme"><i class="fas fa-moon"></i></button>
+      <div style="flex-grow: 1; text-align: right; font-size: 13px;">
+          <span id="currentUserId" style="font-weight: 600; color: var(--accent);">ID: ?</span>
+      </div>
+    </div>
+
+    <div class="contacts" id="contactsList"></div>
+  </aside>
+
+  <section class="chat">
+    <div class="header">
+      <div class="header-left">
+        <div id="currentAvatar" class="avatar transition-300"></div>
+        <div>
+          <div class="chat-title" id="currentName">Select contact</div>
+          <div class="small" id="currentStatus">Locked</div>
+          <span id="activeIndicator" class="online-indicator" style="display:none;"></span>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn ephemeral-toggle transition-300" id="ephemeralToggle" title="Toggle Ephemeral Messages"><i class="fas fa-burn"></i></button>
+        <button class="btn transition-300" id="videoCallBtn" title="Start Video Call"><i class="fas fa-video"></i></button>
+        <button class="btn transition-300" id="lockBtn" title="Lock Chat"><i class="fas fa-lock"></i></button>
+      </div>
+    </div>
+
+    <div class="messages" id="messagesContainer">
+      <div class="center small muted-text" style="padding-top: 50px;">Please login to begin.</div>
+    </div>
+
+    <div class="composer">
+      <div class="input-area transition-300">
+        <button class="composer-btn transition-300 emoji-btn" id="emojiBtn" title="Emoji"><i class="far fa-face-smile"></i></button>
+        <input id="inpMessage" placeholder="Type a message..." disabled />
+        
+        <button class="composer-btn transition-300 otv-toggle" id="otvToggle" title="Toggle One-Time View Media"><i class="fas fa-eye-slash"></i></button>
+        <button class="composer-btn transition-300" id="attachFileBtn" title="Attach File"><i class="fas fa-paperclip"></i></button>
+        <button class="composer-btn transition-300" id="recordVideoBtn" title="Record Video Message"><i class="fas fa-camera"></i></button>
+        <input id="fileInput" type="file" style="display:none" multiple />
+      </div>
+      <button class="send-mic-btn transition-300" id="sendBtn" disabled title="Send Message"><i class="fas fa-arrow-up"></i></button>
+    </div>
+    
+    <div class="emoji-picker" id="emojiPicker">
+        <div class="emoji-grid" id="emojiGrid"></div>
+    </div>
+  </section>
+</div>
+
+<!-- LOGIN MODAL -->
+<div id="loginModal" class="modal-backdrop" style="display:flex">
+  <div class="modal transition-300">
+    <h3>🔐 Login to EchoSafe</h3>
+    <div class="field">
+        <label class="small">Username</label>
+        <input id="loginUsername" type="text" placeholder="Enter username" />
+    </div>
+    <div class="field">
+        <label class="small">Password</label>
+        <input id="loginPassword" type="password" placeholder="Enter password" />
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn primary transition-300" id="loginSubmit">Login</button>
+    </div>
+    <div class="small muted-text" style="margin-top:10px;text-align:center;">Demo: username=aashisoni, password=1234</div>
+  </div>
+</div>
+
+<!-- MASTER PASSWORD MODAL -->
+<div id="pwModal" class="modal-backdrop" style="display:none">
+  <div class="modal transition-300">
+    <h3 id="pwModalTitle">Set Master Password</h3>
+    <div class="field">
+        <label class="small">Master Password (min 4 chars)</label>
+        <input id="pwInput" type="password" placeholder="Enter master password" />
+    </div>
+    <div class="field">
+        <label class="small">Confirm Password</label>
+        <input id="pwConfirm" type="password" placeholder="Re-enter password" />
+    </div>
+    <div class="field">
+        <label class="small">Your User ID (user1 to user6)</label>
+        <input id="userIdInput" type="text" placeholder="e.g., user1" />
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn transition-300" id="pwCancel">Cancel</button>
+      <button class="btn primary transition-300" id="pwSubmit">Save & Connect</button>
+    </div>
+  </div>
+</div>
+
+<!-- UNLOCK CHAT MODAL -->
+<div id="unlockModal" class="modal-backdrop" style="display:none">
+  <div class="modal transition-300">
+    <h3>Unlock Chat</h3>
+    <div class="field">
+        <label class="small">Enter Master Password</label>
+        <input id="unlockInput" type="password" placeholder="Master password"/>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn transition-300" id="unlockCancel">Cancel</button>
+      <button class="btn primary transition-300" id="unlockSubmit">Unlock</button>
+    </div>
+  </div>
+</div>
+
+<!-- VIDEO MODAL -->
+<div id="videoModal" class="modal-backdrop" style="display:none">
+  <div class="modal transition-300" style="width: 700px;">
+    <h3><span id="videoModalTitle">Video Preview</span></h3>
+    <div style="margin:10px 0;">
+      <span class="small" id="videoCallStatus">Awaiting connection...</span>
+    </div>
+
+    <div id="remoteVideoContainer">
+        <div style="text-align: center;">
+            <video id="localVideo" autoplay muted playsinline></video>
+            <div class="small" style="margin-top: 5px;">Your Feed</div>
+        </div>
+        <div style="text-align: center;">
+            <video id="remoteVideo" autoplay playsinline></video>
+            <div class="small" style="margin-top: 5px;">Peer Feed</div>
+        </div>
+    </div>
+    
+    <div style="margin-top: 15px; display:flex; justify-content: space-between; align-items: center;">
+        <span class="record-indicator" id="recordIndicator">🔴 Recording...</span>
+        <div style="display:flex;gap:8px;">
+            <button class="btn transition-300" id="endCallOrStopRecording"><i class="fas fa-times"></i> Close</button>
+            <button class="btn primary transition-300" id="startCallBtn"><i class="fas fa-phone"></i> Call <span id="peerNameCall"></span></button>
+            <button class="btn primary transition-300" id="startRecordingBtn" style="display:none;"><i class="fas fa-circle"></i> Record</button>
+            <button class="btn primary transition-300" id="sendRecordingBtn" style="display:none;"><i class="fas fa-share"></i> Send</button>
+        </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+
+/* Elements */
+const loginModal=document.getElementById('loginModal');
+const loginUsername=document.getElementById('loginUsername');
+const loginPassword=document.getElementById('loginPassword');
+const loginSubmit=document.getElementById('loginSubmit');
+const pwModal=document.getElementById('pwModal');
+const pwInput=document.getElementById('pwInput');
+const pwConfirm=document.getElementById('pwConfirm');
+const pwSubmit=document.getElementById('pwSubmit');
+const userIdInput=document.getElementById('userIdInput');
+const messagesContainer=document.getElementById('messagesContainer');
+const inpMessage=document.getElementById('inpMessage');
+const sendBtn=document.getElementById('sendBtn');
+const fileInput=document.getElementById('fileInput');
+const attachFileBtn=document.getElementById('attachFileBtn');
+const otvToggle = document.getElementById('otvToggle');
+const ephemeralToggle = document.getElementById('ephemeralToggle');
+const emojiBtn = document.getElementById('emojiBtn');
+const emojiPicker = document.getElementById('emojiPicker');
+const emojiGrid = document.getElementById('emojiGrid');
+const localVideo=document.getElementById('localVideo');
+const remoteVideo=document.getElementById('remoteVideo');
+const startCallBtn=document.getElementById('startCallBtn');
+const videoCallStatus = document.getElementById('videoCallStatus');
+const unlockInput = document.getElementById('unlockInput');
+const recordIndicator=document.getElementById('recordIndicator');
+const startRecordingBtn=document.getElementById('startRecordingBtn');
+const sendRecordingBtn=document.getElementById('sendRecordingBtn');
+const endCallOrStopRecording=document.getElementById('endCallOrStopRecording');
+const currentUserIdDisplay = document.getElementById('currentUserId');
+const activeIndicator = document.getElementById('activeIndicator');
+const btnClear = document.getElementById('btnClear');
+const themeToggle = document.getElementById('themeToggle');
+
+/* State */
+let masterKey = null;
+let currentUserId = null;
+let currentContact=null;
+let isEphemeralMode = false;
+let isOtvMode = false; 
+let localStream=null;
+let mediaRecorder=null;
+let recordedChunks=[];
+let recordedVideoBlob=null;
+const MAX_FILE_SIZE = 15 * 1024 * 1024; 
+const EPHEMERAL_LIFETIME_MS = 8000;
+
+/* WebRTC */
+const STUN_SERVER = 'stun:stun.l.google.com:19302'; 
+const peerConnectionConfig = { iceServers: [{ urls: STUN_SERVER }] };
+let peerConnection = null;
+let stompClient = null;
+
+/* Contacts */
+const demoContacts=[
+{id:'user1', name:'Ishan Patel', msg:'{"type":"text", "content":"Hello!","time": "20:01"}', avatar:'IP', messages:[]},
+{id:'user2', name:'Naisha Khan', msg:'{"type":"text", "content":"Hello!","time": "20:05"}', avatar:'NK', messages:[]},
+{id:'user3', name:'Rohit Mehta', msg:'{"type":"text", "content":"Hello!","time": "20:10"}', avatar:'RM', messages:[]},
+{id:'user4', name:'Manisha Singh', msg:'{"type":"text", "content":"Hello!","time": "20:15"}', avatar:'MS', messages:[]},
+{id:'user5', name:'Sachin Sharma', msg:'{"type":"text", "content":"Hello!","time": "20:20"}', avatar:'SS', messages:[]},
+{id:'user6', name:'Devika Rao', msg:'{"type":"text", "content":"Hello!","time": "20:25"}', avatar:'DR', messages:[]},
+];
+
+/* ===== EMOJI PICKER ===== */
+const emojis = ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🤧','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','😟','🙁','☹️','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾','🤖','😺','😸','😹','😻','😼','😽','🙀','😿','😾','❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','👍','👎','👊','✊','🤛','🤜','🤞','✌️','🤟','🤘','👌','🤌','🤏','👈','👉','👆','👇','☝️','✋','🤚','🖐️','🖖','👋','🤙','💪','🦾','🙏','✍️','💅','🤳','💃','🕺','🎉','🎊','🎈','🎁','🏆','🥇','🥈','🥉','⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🪃','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛼','🛷','⛸️','🥌','🎿','⛷️','🏂'];
+
+function initEmojiPicker() {
+    emojis.forEach(emoji => {
+        const span = document.createElement('span');
+        span.className = 'emoji-item';
+        span.textContent = emoji;
+        span.onclick = () => {
+            inpMessage.value += emoji;
+            inpMessage.focus();
+            emojiPicker.classList.remove('show');
+        };
+        emojiGrid.appendChild(span);
+    });
+}
+
+emojiBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    emojiPicker.classList.toggle('show');
+});
+
+document.addEventListener('click', (e) => {
+    if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) {
+        emojiPicker.classList.remove('show');
+    }
+});
+
+/* ===== UTILITY ===== */
+function showModal(el){el.style.display='flex';}
+function hideModal(el){el.style.display='none';}
+function formatFileSize(bytes, decimals = 2) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024; const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+function displayUiFeedback(message) {
+    console.log("UI:", message);
+    const statusDiv = document.getElementById('currentStatus');
+    const originalText = statusDiv.textContent;
+    statusDiv.textContent = message;
+    setTimeout(() => {
+        if (statusDiv.textContent === message) {
+            statusDiv.textContent = currentContact ? (inpMessage.disabled ? 'Locked' : 'Online') : 'Locked';
+        }
+    }, 2500);
+}
+
+/* Dark mode */
+(function initTheme(){
+  const saved = localStorage.getItem('echosafe-theme');
+  if(saved === 'dark'){ document.documentElement.classList.add('dark'); }
+  themeToggle.addEventListener('click', ()=>{
+    document.documentElement.classList.toggle('dark');
+    localStorage.setItem('echosafe-theme', document.documentElement.classList.contains('dark')?'dark':'light');
+  });
+})();
+
+/* ===== RENDER ===== */
+function renderContacts(){
+  const contactsList=document.getElementById('contactsList');
+  contactsList.innerHTML='';
+  demoContacts.filter(c => c.id !== currentUserId).forEach((c,i)=>{
+    const div=document.createElement('div');
+    div.className='contact transition-300'+(currentContact?.id===c.id?' active':'');
+    
+    // Get the last message preview
+    let previewText = 'Hello!'; // Default
+    let previewTime = '20:00';
+    
+    // Parse the stored preview message
+    try {
+      const lastMsg = JSON.parse(c.msg);
+      previewText = lastMsg.content || 'Hello!';
+      previewTime = lastMsg.time || '20:00';
+    } catch(e) {
+      // If parsing fails, use defaults
+    }
+    
+    div.innerHTML=`<div class="avatar transition-300">${c.avatar}</div><div class="meta"><div class="name">${c.name}</div><div class="last muted-text">${previewText}</div></div>`;
+    div.onclick=()=>promptUnlock(i);
+    contactsList.appendChild(div);
+  });
+}
+
+function createMessageElement(msgObj, isMe=false){
+  const div=document.createElement('div');
+  div.className='msg '+(isMe?'me':'them');
+  if(msgObj.ephemeral) div.className += ' ephemeral';
+  if(msgObj.otv) div.className += ' otv-media'; 
+
+  const time = `<span class="time">${msgObj.time} <i class="fas fa-check-double"></i></span>`; 
+
+  if(msgObj.type === 'text'){
+    div.innerHTML = `<span class="msg-content">${msgObj.content}</span>${time}`;
+  } else if (['file', 'image', 'video'].includes(msgObj.type)) {
+    div.className += ' msg-media';
+    let mediaHTML = '';
+    let caption = msgObj.content || '';
+    
+    if (msgObj.otv) {
+        mediaHTML = `
+            <div class="media-preview" style="text-align:center; padding: 20px;">
+                <button class="btn primary transition-300 otv-view-btn" style="padding:10px 20px;">
+                    <i class="fas fa-eye-slash"></i> Tap to View (One-Time)
+                </button>
+            </div>`;
+        caption = `<i class="fas fa-eye-slash" style="color: var(--ephemeral-color);"></i> Self-Destructing Media`;
+    } else if (msgObj.type === 'image' && msgObj.url) {
+        mediaHTML = `<div class="media-preview"><img src="${msgObj.url}" alt="${msgObj.name||'image'}" loading="lazy"/></div>`;
+    } else if (msgObj.type === 'video') {
+        mediaHTML = `<video src="${msgObj.url}" controls></video>`;
+        caption = msgObj.name || 'Video Message';
+    } else { 
+        mediaHTML = `
+            <div style="padding:10px; display:flex; gap:10px; align-items:center;">
+                <i class="fas fa-file-alt fa-2x" style="color:var(--accent);"></i>
+                <div>
+                    <div style="font-weight:600; font-size:14px;">${msgObj.name||'file'}</div>
+                    <div class="small muted-text">${msgObj.size||''}</div>
+                </div>
+            </div>`;
+        caption = msgObj.content || '';
+    }
+
+    div.innerHTML = mediaHTML + `<div class="caption">${caption}${time}</div>`;
+  }
+
+  if(msgObj.ephemeral) {
+      setTimeout(() => {
+          div.style.transition = 'opacity 0.5s';
+          div.style.opacity = 0;
+          setTimeout(() => div.remove(), 500);
+      }, EPHEMERAL_LIFETIME_MS);
+  }
+
+  return div;
+}
+
+function renderMessages(contact){
+  messagesContainer.innerHTML='';
+  
+  // Render the initial "Hello!" message (always stays the same)
+  const initialMsg = {
+    id: 'initial',
+    type: 'text',
+    content: 'Hello!',
+    time: '20:01',
+    isMe: false,
+    ephemeral: false,
+    otv: false
+  };
+  messagesContainer.appendChild(createMessageElement(initialMsg, false));
+  
+  // Render all other messages
+  contact.messages.forEach(m => {
+    messagesContainer.appendChild(createMessageElement(m, m.isMe));
+  });
+  
+  messagesContainer.scrollTop=messagesContainer.scrollHeight;
+  setupOtvViewHandlers(); 
+}
+
+function setupOtvViewHandlers() {
+    const tempModal = document.getElementById('unlockModal');
+    document.querySelectorAll('.otv-view-btn').forEach(btn => {
+        if (btn.hasAttribute('data-handler-set')) return;
+        btn.setAttribute('data-handler-set', 'true');
+
+        btn.onclick = (e) => {
+            const msgElement = e.target.closest('.msg');
+            const idx = Array.from(messagesContainer.children).indexOf(msgElement) - 1; 
+
+            if (idx < 0 || !currentContact || !currentContact.messages[idx]) {
+                displayUiFeedback("Error: Media not found.");
+                return;
+            }
+
+            const msgObj = currentContact.messages[idx];
+            let mediaHtml = '';
+            if (msgObj.type === 'image') {
+                mediaHtml = `<img src="${msgObj.url}" style="max-width:400px; height:auto; border-radius:10px;" />`;
+            } else if (msgObj.type === 'video') {
+                mediaHtml = `<video src="${msgObj.url}" controls autoplay style="max-width:400px; height:auto; border-radius:10px;"></video>`;
+            } else if (msgObj.type === 'file') {
+                mediaHtml = `<div style="padding:14px 6px 0;">${msgObj.name||'file'} (${msgObj.size||''})</div>`;
+            }
+            
+            tempModal.querySelector('h3').textContent = 'One-Time View';
+            tempModal.querySelector('.modal').style.width = 'fit-content';
+            tempModal.querySelector('.field').innerHTML = mediaHtml;
+            tempModal.querySelector('.field').style.display = 'block';
+            tempModal.querySelector('button#unlockSubmit').style.display = 'none';
+            tempModal.querySelector('button#unlockCancel').textContent = 'Close & Delete';
+
+            tempModal.querySelector('button#unlockCancel').onclick = () => {
+                if (currentContact && currentContact.messages[idx]) {
+                    currentContact.messages.splice(idx, 1);
+                    renderMessages(currentContact); 
+                    displayUiFeedback('OTV Media deleted.');
+                }
+                tempModal.querySelector('button#unlockSubmit').style.display = 'inline-block';
+                tempModal.querySelector('button#unlockCancel').textContent = 'Cancel';
+                tempModal.querySelector('.modal').style.width = '480px';
+                tempModal.querySelector('.field').style.display = 'none'; 
+                tempModal.querySelector('h3').textContent = 'Unlock Chat'; 
+                hideModal(tempModal);
+            };
+            showModal(tempModal);
+        };
+    });
+}
+
+function pushToContact(contact, msgObj){
+  contact.messages.push(msgObj);
+  
+  // Only update the last message preview if it's from them (not our own message)
+  if (!msgObj.isMe) {
+    contact.msg = JSON.stringify({
+      type: 'text', 
+      content: (msgObj.type==='text'?msgObj.content:(msgObj.name||msgObj.content||'Media')), 
+      time: msgObj.time
+    });
+    renderContacts(); // Update contact list only when they send a message
+  }
+  
+  // Always render the current chat messages
+  if (currentContact?.id === contact.id) {
+    renderMessages(contact);
+  }
+}
+
+/* Auto-reply logic */
+function simulateReply(userMessage, contact) {
+  setTimeout(() => {
+    const nowTime = new Date().toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'});
+    let replyText = '';
+    
+    // Check message content for replies
+    const msgLower = userMessage.toLowerCase().trim();
+    if (msgLower === 'hi' || msgLower === 'hey' || msgLower === 'hello') {
+      replyText = 'How are you?';
+    }
+    
+    // If reply text exists, send it
+    if (replyText) {
+      const replyMsg = {
+        id: Date.now(),
+        type: 'text',
+        content: replyText,
+        time: nowTime,
+        isMe: false,
+        ephemeral: false,
+        otv: false
+      };
+      
+      if (currentContact?.id === contact.id) {
+        pushToContact(contact, replyMsg);
+      }
+    }
+  }, 1000 + Math.random() * 1000); // Random delay 1-2s
+}
+
+function simulateFileReply(fileName, contact) {
+  setTimeout(() => {
+    const nowTime = new Date().toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'});
+    const replyMsg = {
+      id: Date.now(),
+      type: 'text',
+      content: 'Thanks!',
+      time: nowTime,
+      isMe: false,
+      ephemeral: false,
+      otv: false
+    };
+    
+    if (currentContact?.id === contact.id) {
+      pushToContact(contact, replyMsg);
+    }
+  }, 1500 + Math.random() * 1000);
+}
+
+/* ===== AUTH ===== */
+loginSubmit.addEventListener('click', () => {
+    const username = loginUsername.value.trim();
+    const password = loginPassword.value.trim();
+    
+    if (username === 'aashisoni' && password === '1234') {
+        hideModal(loginModal);
+        showModal(pwModal);
+        pwInput.focus();
+    } else {
+        displayUiFeedback("Invalid credentials!");
+        loginPassword.value = '';
+    }
+});
+
+loginPassword.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') loginSubmit.click();
+});
+
+function promptUnlock(idx){
+  if (!masterKey) { displayUiFeedback("Set Master Password first."); return; }
+  const filteredContacts = demoContacts.filter(c => c.id !== currentUserId);
+  const selectedContact = filteredContacts[idx];
+  if (!selectedContact) return;
+  if (currentContact?.id === selectedContact.id) return;
+
+  currentContact=selectedContact;
+  renderContacts(); 
+  document.getElementById('currentAvatar').innerText = currentContact.avatar;
+  document.getElementById('currentName').innerText = currentContact.name;
+  document.getElementById('currentStatus').innerText = 'Locked';
+  activeIndicator.style.display = 'none';
+
+  showModal(document.getElementById('unlockModal'));
+  unlockInput.value='';
+  unlockInput.focus();
+}
+
+document.getElementById('unlockSubmit').onclick = () => {
+  if (unlockInput.value === masterKey) {
+    hideModal(document.getElementById('unlockModal'));
+    renderMessages(currentContact);
+    inpMessage.disabled = false;
+    sendBtn.disabled = false;
+    document.getElementById('currentStatus').innerText = 'Online';
+    activeIndicator.style.display = 'inline-block';
+    inpMessage.focus();
+  } else {
+    displayUiFeedback("Incorrect password.");
+    unlockInput.value = '';
+  }
+};
+
+document.getElementById('unlockCancel').onclick = () => {
+    hideModal(document.getElementById('unlockModal'));
+    currentContact = null;
+    renderContacts();
+};
+
+unlockInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('unlockSubmit').click();
+});
+
+pwSubmit.addEventListener('click', ()=>{
+  const uid = userIdInput?.value.trim();
+
+  if(pwInput.value.length < 4){ displayUiFeedback("Password min 4 chars."); return; }
+  if(pwInput.value!==pwConfirm.value){displayUiFeedback("Passwords don't match.");return;}
+  if (!uid || !demoContacts.some(c => c.id === uid)) {
+      displayUiFeedback(`User ID: user1 to user6`);
+      return;
+  }
+
+  masterKey=pwInput.value;
+  currentUserId = uid;
+  
+  hideModal(pwModal);
+  currentUserIdDisplay.textContent = 'ID: ' + uid;
+  document.getElementById('currentStatus').textContent = 'Ready';
+  displayUiFeedback('Master password set!');
+  renderContacts();
+});
+
+pwConfirm.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') pwSubmit.click();
+});
+
+document.getElementById('pwCancel').onclick=()=>{
+    if (!masterKey) {
+        displayUiFeedback("Master password required.");
+    } else {
+        hideModal(pwModal);
+    }
+};
+
+/* ===== MESSAGING ===== */
+function doSendText(){
+  const text = inpMessage.value.trim();
+  if (!text || !currentContact || inpMessage.disabled) return;
+  
+  const nowTime = new Date().toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'});
+  const msgObj = {
+      id: Date.now(),
+      type: 'text',
+      content: text,
+      time: nowTime,
+      isMe: true,
+      ephemeral: isEphemeralMode,
+      otv: false
+  };
+  
+  pushToContact(currentContact, msgObj);
+  inpMessage.value = '';
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  
+  // Simulate reply
+  simulateReply(text, currentContact);
+}
+
+sendBtn.addEventListener('click', doSendText);
+
+inpMessage.addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter' && !e.shiftKey){
+    e.preventDefault();
+    if(!sendBtn.disabled && !inpMessage.disabled) doSendText();
+  }
+});
+
+ephemeralToggle.addEventListener('click', ()=>{
+  if(inpMessage.disabled) return;
+  isEphemeralMode = !isEphemeralMode;
+  ephemeralToggle.classList.toggle('active', isEphemeralMode);
+  displayUiFeedback(isEphemeralMode ? 'Ephemeral ON (8s)' : 'Ephemeral OFF');
+});
+
+otvToggle.addEventListener('click', ()=>{
+  if(inpMessage.disabled) return;
+  isOtvMode = !isOtvMode;
+  otvToggle.classList.toggle('active', isOtvMode);
+  displayUiFeedback(isOtvMode ? 'One-Time View ON' : 'One-Time View OFF');
+});
+
+/* ===== FILES ===== */
+attachFileBtn.addEventListener('click', ()=> {
+    if(!currentContact || inpMessage.disabled){ displayUiFeedback('Unlock chat first.'); return; }
+    fileInput.click();
+});
+
+fileInput.addEventListener('change', (e)=>{
+  if(!currentContact){ displayUiFeedback('Select contact.'); return; }
+  const files = Array.from(e.target.files||[]);
+  
+  files.forEach(file=>{
+    if(file.size > MAX_FILE_SIZE){
+      displayUiFeedback(`${file.name} exceeds 15MB.`);
+      return;
+    }
+    
+    const nowTime = new Date().toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'});
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+    
+    if(isImage){
+      const url = URL.createObjectURL(file);
+      const msgObj = {
+          id: Date.now(),
+          type: 'image',
+          name: file.name,
+          size: formatFileSize(file.size),
+          url: url,
+          time: nowTime,
+          isMe: true,
+          ephemeral: isEphemeralMode,
+          otv: isOtvMode
+      };
+      pushToContact(currentContact, msgObj);
+      
+      // Auto-reply for images (jpg, jpeg, png, etc)
+      if (file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+        simulateFileReply(file.name, currentContact);
+      }
+    }else if(isVideo){
+      const url = URL.createObjectURL(file);
+      const msgObj = {
+          id: Date.now(),
+          type: 'video',
+          name: file.name,
+          size: formatFileSize(file.size),
+          url: url,
+          time: nowTime,
+          isMe: true,
+          ephemeral: isEphemeralMode,
+          otv: isOtvMode
+      };
+      pushToContact(currentContact, msgObj);
+    }else{
+      const msgObj = {
+          id: Date.now(),
+          type: 'file',
+          name: file.name,
+          size: formatFileSize(file.size),
+          time: nowTime,
+          isMe: true,
+          ephemeral: isEphemeralMode,
+          otv: isOtvMode
+      };
+      pushToContact(currentContact, msgObj);
+    }
+  });
+  
+  fileInput.value='';
+});
+
+/* ===== VIDEO ===== */
+async function startMediaStream(isRecording = false){
+  if(localStream) return true;
+  try{
+    const s = await navigator.mediaDevices.getUserMedia({video: true, audio: true});
+    localStream = s;
+    localVideo.srcObject = s;
+    if(isRecording) localVideo.muted = false; 
+    return true;
+  }catch(err){
+    displayUiFeedback('Camera/mic access denied.');
+    return false;
+  }
+}
+
+function stopMediaStream(){
+  if(peerConnection) { try{peerConnection.close();}catch{} peerConnection = null; }
+  if(localStream){
+    localStream.getTracks().forEach(t=>t.stop());
+    localStream = null;
+  }
+  localVideo.srcObject = null;
+  remoteVideo.srcObject = null;
+  recordIndicator.style.display = 'none';
+  startCallBtn.style.display = 'inline-block';
+  startRecordingBtn.style.display = 'none';
+  sendRecordingBtn.style.display = 'none';
+  videoCallStatus.textContent = '';
+  document.getElementById('videoModalTitle').textContent = 'Video Preview';
+  localVideo.muted = true;
+}
+
+endCallOrStopRecording.onclick = ()=>{
+    if (peerConnection) {
+        if(peerConnection) peerConnection.close();
+        peerConnection = null;
+        stopMediaStream();
+        hideModal(document.getElementById('videoModal'));
+        displayUiFeedback('Call ended.');
+    } else if (mediaRecorder && mediaRecorder.state !== 'inactive'){
+        mediaRecorder.stop();
+    } else {
+        stopMediaStream();
+        hideModal(document.getElementById('videoModal'));
+    }
+};
+
+startRecordingBtn.onclick = async ()=>{
+  if(await startMediaStream(true)){
+    recordedChunks = [];
+    mediaRecorder = new MediaRecorder(localStream);
+    mediaRecorder.ondataavailable = (e) => { if(e.data && e.data.size>0) recordedChunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      recordedVideoBlob = new Blob(recordedChunks, { type: 'video/webm' });
+      localVideo.srcObject = null;
+      localVideo.src = URL.createObjectURL(recordedVideoBlob);
+      localVideo.muted = false; 
+      recordIndicator.style.display = 'none';
+      startRecordingBtn.style.display = 'none';
+      sendRecordingBtn.style.display = 'inline-block';
+      endCallOrStopRecording.textContent = 'Cancel';
+      document.getElementById('videoModalTitle').textContent = 'Review Recording';
+    };
+    mediaRecorder.start();
+    recordIndicator.style.display = 'inline-block';
+    startRecordingBtn.style.display = 'none';
+    document.getElementById('videoModalTitle').textContent = 'Recording...';
+    endCallOrStopRecording.textContent = 'Stop';
+  }
+};
+
+sendRecordingBtn.onclick = ()=>{
+  if (!recordedVideoBlob || !currentContact) return;
+  
+  const nowTime = new Date().toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'});
+  const url = URL.createObjectURL(recordedVideoBlob);
+  const msgObj = {
+      id: Date.now(),
+      type: 'video',
+      name: 'video_msg.webm',
+      size: formatFileSize(recordedVideoBlob.size),
+      url: url,
+      time: nowTime,
+      isMe: true,
+      ephemeral: isEphemeralMode,
+      otv: isOtvMode
+  };
+  
+  pushToContact(currentContact, msgObj);
+  stopMediaStream();
+  hideModal(document.getElementById('videoModal'));
+  displayUiFeedback('Video sent!');
+  recordedVideoBlob = null;
+};
+
+document.getElementById('recordVideoBtn').onclick = ()=>{
+  if(!currentContact || inpMessage.disabled) { displayUiFeedback('Unlock chat first.'); return; }
+  stopMediaStream(); 
+  recordedVideoBlob = null;
+  document.getElementById('videoModalTitle').textContent = 'Record Video Message';
+  startCallBtn.style.display = 'none';
+  startRecordingBtn.style.display = 'inline-block';
+  sendRecordingBtn.style.display = 'none';
+  endCallOrStopRecording.textContent = 'Cancel';
+  showModal(document.getElementById('videoModal'));
+};
+
+document.getElementById('videoCallBtn').onclick = async ()=> {
+  if(!currentContact || inpMessage.disabled) { displayUiFeedback('Unlock chat first.'); return; }
+  stopMediaStream(); 
+  document.getElementById('videoModalTitle').textContent = 'Video Call';
+  document.getElementById('peerNameCall').textContent = currentContact.name;
+  startRecordingBtn.style.display = 'none';
+  startCallBtn.style.display = 'inline-block';
+  sendRecordingBtn.style.display = 'none';
+  endCallOrStopRecording.textContent = 'End Call';
+  showModal(document.getElementById('videoModal'));
+  await startMediaStream();
+  displayUiFeedback('Video calling requires WebRTC backend.');
+};
+
+startCallBtn.onclick = ()=> {
+    displayUiFeedback('WebRTC calling requires server setup.');
+};
+
+/* ===== CONTROLS ===== */
+btnClear.addEventListener('click', ()=>{
+  if(!currentContact){ displayUiFeedback('Select contact.'); return; }
+  if(!confirm('Clear all messages for ' + currentContact.name + '?')) return;
+  currentContact.messages = [];
+  renderMessages(currentContact);
+  displayUiFeedback('Chat cleared.');
+});
+
+document.getElementById('lockBtn').addEventListener('click', ()=>{
+  if(!currentContact){ displayUiFeedback('Select contact.'); return; }
+  inpMessage.disabled = true;
+  sendBtn.disabled = true;
+  document.getElementById('currentStatus').innerText = 'Locked';
+  activeIndicator.style.display = 'none';
+  displayUiFeedback('Chat locked.');
+});
+
+/* ===== INIT ===== */
+initEmojiPicker();
+renderContacts();
+loginUsername.focus();
+
+})();
+</script>
+</body>
+</html>
